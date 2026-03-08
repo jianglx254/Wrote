@@ -1,4 +1,4 @@
-const API_KEY = ${{ secrets.GEMINI_API_KEY }}; // Replace with your Gemini API key — never commit real keys to source control
+const API_KEY = "YOUR_KEY_HERE"; // Injected at deploy time — never commit real keys to source control
 
 
 
