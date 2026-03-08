@@ -1,4 +1,6 @@
-const API_KEY = "YOUR_KEY_HERE"; // Replace with your Gemini API key — never commit real keys to source control
+const API_KEY = ${{ secrets.GEMINI_API_KEY }}; // Replace with your Gemini API key — never commit real keys to source control
+
+
 
 const TEXT_URL = "texts/meditations.txt";
 const WEAK_KEYS_STORAGE_KEY = "shift_weak_keys";
