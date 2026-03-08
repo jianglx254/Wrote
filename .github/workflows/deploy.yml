@@ -25,7 +25,7 @@ jobs:
           # The secret is passed via an env var (not inline) so shell-special characters
           # in the key are handled safely. The | delimiter avoids conflicts with any /
           # characters that may appear in the key value.
-          sed -i "s|GEMINI_API_KEY_PLACEHOLDER|${GEMINI_API_KEY}|g" script.js
+          sed -i "/^const API_KEY = /s|GEMINI_API_KEY_PLACEHOLDER|${GEMINI_API_KEY}|" script.js
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
