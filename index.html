@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Wrote — Rote Memorization</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+  <!-- Fluid geometric background canvas -->
+  <canvas id="bg-canvas"></canvas>
+
+  <!-- Loading / processing overlay -->
+  <div id="loading-screen" aria-live="polite" aria-label="Loading">
+    <div class="loading-content">
+      <p class="loading-label">Neural Link Initializing…</p>
+      <div class="loading-bar-track">
+        <div id="loading-bar" class="loading-bar"></div>
+      </div>
+    </div>
+  </div>
+
+  <main class="app">
+    <header class="header">
+      <div>
+        <h1>Wrote</h1>
+        <p class="subtle">Rote-memorization typing tool.</p>
+      </div>
+
+      <div class="header__right">
+        <span id="ai-status" class="status-indicator">Gemini AI</span>
+        <span class="hint">Enter: next</span>
+        <span class="hint">Esc: restart</span>
+      </div>
+    </header>
+
+    <section class="panel">
+      <div id="stats" class="stats" aria-live="polite">
+        <span>Sentence <strong id="idx">–</strong>/<strong id="total">–</strong></span>
+        <span>WPM <strong id="wpm">0</strong></span>
+        <span>Accuracy <strong id="acc">0</strong>%</span>
+        <span>Best <strong id="best">–</strong></span>
+        <span>Weak Key <strong id="weak-key">–</strong></span>
+        <span>Focus Letters <strong id="focus-letters">–</strong></span>
+        <span>Mastery <strong id="mastery">0</strong>%</span>
+      </div>
+
+      <div class="type-area" id="type-area" tabindex="0" role="button" aria-label="Typing area (click to focus)">
+        <div id="target-text" aria-label="Target text"></div>
+
+        <!-- Hidden but functional input -->
+        <input
+          id="input-field"
+          type="text"
+          autocomplete="off"
+          autocapitalize="off"
+          spellcheck="false"
+          aria-label="Typing input"
+        />
+      </div>
+
+      <div id="feedback" class="feedback subtle"></div>
+    </section>
+
+    <details class="notes-panel" id="notes-panel">
+      <summary class="notes-summary" title="Paste Notes / Load File" aria-label="Paste Notes / Load File">&#xFF0B;</summary>
+      <div class="notes-body">
+        <textarea
+          id="notes-area"
+          placeholder="Paste your study notes here…"
+          rows="5"
+          aria-label="Paste notes text"
+        ></textarea>
+        <div class="notes-actions">
+          <label class="btn" for="file-input">&#x1F4C2; Load from File</label>
+          <input id="file-input" type="file" accept=".txt" aria-label="Upload text file" />
+          <button id="load-notes-btn" class="btn btn--accent">Load Notes</button>
+          <button id="generate-btn" class="btn btn--accent btn--generate" disabled>&#x2728; Generate Study Session</button>
+        </div>
+      </div>
+    </details>
+
+    <footer class="footer subtle">
+      Click the text area to focus. Mastery, weak keys, and custom text are saved across sessions.
+    </footer>
+  </main>
+
+  <script type="module" src="script.js"></script>
+</body>
+</html>
