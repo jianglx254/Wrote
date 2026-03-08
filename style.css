@@ -331,3 +331,45 @@ h1{ margin: 0; font-weight: 700; letter-spacing: 0.3px; }
   .cursor{ animation: none; opacity: 1; }
   body::before{ animation: none; }
 }
+
+/* --- AI status indicator --- */
+
+.status-indicator{
+  border: 1px solid rgba(0,245,255,0.35);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  color: var(--muted);
+  background: rgba(0,245,255,0.05);
+  letter-spacing: 0.5px;
+}
+
+.status-indicator.status--ready{
+  border-color: rgba(0,245,255,0.55);
+  color: var(--accent);
+  background: rgba(0,245,255,0.08);
+}
+
+.status-indicator.status--error{
+  border-color: rgba(187,134,252,0.40);
+  color: var(--warn);
+  background: rgba(187,134,252,0.06);
+}
+
+/* --- Generate button --- */
+
+.btn--generate{
+  border-color: rgba(0,245,255,0.45);
+  color: var(--accent);
+  background: rgba(0,245,255,0.06);
+}
+
+.btn--generate:hover:not(:disabled){
+  background: rgba(0,245,255,0.14);
+}
+
+.btn:disabled{
+  opacity: 0.35;
+  cursor: not-allowed;
+}

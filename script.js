@@ -1,3 +1,5 @@
+import { pipeline } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers";
+
 const TEXT_URL = "texts/meditations.txt";
 const WEAK_KEYS_STORAGE_KEY = "shift_weak_keys";
 const WROTE_TEXT_KEY = "wrote_text";
@@ -28,6 +30,99 @@ const elMastery = document.getElementById("mastery");
 const elNotesArea = document.getElementById("notes-area");
 const elFileInput = document.getElementById("file-input");
 const elLoadNotesBtn = document.getElementById("load-notes-btn");
+const elGenerateBtn = document.getElementById("generate-btn");
+const elAiStatus = document.getElementById("ai-status");
+
+// --- AI engine ---
+
+let summarizer = null;
+
+/**
+ * Split a paragraph of AI summary text into individual sentences using
+ * regex on period and exclamation-mark boundaries.
+ * @param {string} text - Paragraph of text from the AI summarizer.
+ * @returns {string[]} Array of trimmed non-empty sentence strings.
+ */
+function splitAISummaryIntoSentences(text) {
+  return text
+    .split(/(?<=[.!?])\s+/)
+    .map(s => s.trim())
+    .filter(s => s.length > 0 && /[a-zA-Z]/.test(s));
+}
+
+/**
+ * Initialize the Transformers.js summarization pipeline.
+ * Updates the status indicator and enables the Generate button when ready.
+ */
+async function initAI() {
+  try {
+    // Xenova/distilbart-cnn-6-6: a compact, fast distilled BART model fine-tuned
+    // on CNN/DailyMail news summarisation. Works well for factual study notes and
+    // runs entirely in-browser via ONNX Runtime (no server required).
+    summarizer = await pipeline("summarization", "Xenova/distilbart-cnn-6-6");
+    if (elAiStatus) {
+      elAiStatus.textContent = "Brain Ready";
+      elAiStatus.classList.add("status--ready");
+    }
+    if (elGenerateBtn) elGenerateBtn.disabled = false;
+  } catch (err) {
+    console.warn("wrote: could not initialize AI pipeline:", err);
+    if (elAiStatus) {
+      elAiStatus.textContent = "AI unavailable";
+      elAiStatus.classList.add("status--error");
+    }
+  }
+}
+
+/**
+ * Use the AI summarizer to process the textarea notes, split the result
+ * into sentences and restart the typing session with the new content.
+ */
+async function processNotes() {
+  const text = elNotesArea.value.trim();
+  if (!text) {
+    elFeedback.textContent = "Please paste some notes before generating.";
+    return;
+  }
+
+  if (elGenerateBtn) elGenerateBtn.disabled = true;
+  elFeedback.textContent = "Generating study session…";
+
+  try {
+    const result = await summarizer(text, { min_length: 15, max_length: 60, chunk_batch_size: 1 });
+    const summaryText = result[0]?.summary_text ?? "";
+    const parsed = splitAISummaryIntoSentences(summaryText);
+
+    if (!parsed.length) {
+      elFeedback.textContent = "Could not extract sentences from summary. Try more detailed notes.";
+      return;
+    }
+
+    sentences = parsed;
+    buildCharMap();
+    initMastery(sentences.length);
+    saveMastery();
+    bestWpm = null;
+    elBest.textContent = "–";
+    updateWeakKeyDisplay();
+    updateFocusLettersDisplay();
+    updateMasteryDisplay();
+    setSentence(pickWeightedRandom());
+    document.getElementById("notes-panel").removeAttribute("open");
+    focusTyping();
+  } catch (err) {
+    console.error("wrote: AI processing error:", err);
+    elFeedback.textContent = "AI error. Please try again.";
+  } finally {
+    if (elGenerateBtn) elGenerateBtn.disabled = false;
+  }
+}
+
+if (elGenerateBtn) {
+  elGenerateBtn.addEventListener("click", () => processNotes());
+}
+
+// --- end AI engine ---
 
 let sentences = [];
 let sentenceIndex = 0;
@@ -687,3 +782,4 @@ async function init() {
 }
 
 init();
+initAI();

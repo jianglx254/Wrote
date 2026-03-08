@@ -16,6 +16,7 @@
       </div>
 
       <div class="header__right">
+        <span id="ai-status" class="status-indicator">Loading Brain…</span>
         <span class="hint">Enter: next</span>
         <span class="hint">Esc: restart</span>
       </div>
@@ -62,6 +63,7 @@
           <label class="btn" for="file-input">&#x1F4C2; Load from File</label>
           <input id="file-input" type="file" accept=".txt" aria-label="Upload text file" />
           <button id="load-notes-btn" class="btn btn--accent">Load Notes</button>
+          <button id="generate-btn" class="btn btn--accent btn--generate" disabled>&#x2728; Generate Study Session</button>
         </div>
       </div>
     </details>
@@ -71,6 +73,6 @@
     </footer>
   </main>
 
-  <script src="script.js"></script>
+  <script type="module" src="script.js"></script>
 </body>
 </html>
