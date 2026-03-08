@@ -35,7 +35,7 @@ jobs:
           # This prevents GitHub's automatic "pages build and deployment" from running
           # alongside (and later overwriting) this workflow's API-key-injected deployment.
           gh api --method PUT /repos/${{ github.repository }}/pages \
-            --field build_type=workflow
+            --field build_type=workflow || true
 
           # Cancel any already-queued "pages build and deployment" runs for this commit
           # so they cannot overwrite our injected deployment after we finish.
