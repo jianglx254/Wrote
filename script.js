@@ -1,8 +1,8 @@
 const TEXT_URL = "texts/meditations.txt";
 
-const elSentence = document.getElementById("sentence");
-const elTypebox = document.getElementById("typebox");
-const elCaret = document.getElementById("caret");
+const elTarget = document.getElementById("target-text");
+const elInput = document.getElementById("input-field");
+const elTypeArea = document.getElementById("type-area");
 
 const elWpm = document.getElementById("wpm");
 const elAcc = document.getElementById("acc");
@@ -10,58 +10,58 @@ const elBest = document.getElementById("best");
 const elIdx = document.getElementById("idx");
 const elTotal = document.getElementById("total");
 const elFeedback = document.getElementById("feedback");
-const elWeakList = document.getElementById("weakList");
-const elFocus = document.getElementById("focus");
 
 let sentences = [];
 let sentenceIndex = 0;
 
 let target = "";
-let typed = ""; // what the user has typed so far (we control this)
 let startedAt = null;
-
 let bestWpm = null;
 
-// per-character timing stats (session only)
-const charStats = new Map(); // char -> {count,totalMs}
-let lastTypeAt = null;
-
-function isIgnorableKey(e) {
-  return (
-    e.ctrlKey || e.metaKey || e.altKey ||
-    e.key === "Shift" ||
-    e.key === "CapsLock" ||
-    e.key === "Tab" ||
-    e.key === "ArrowLeft" || e.key === "ArrowRight" ||
-    e.key === "ArrowUp" || e.key === "ArrowDown"
-  );
-}
-
-function normalizeCorpus(text) {
-  return text
+function cleanPhilosophyText(rawText) {
+  // 1) Split into lines
+  const lines = String(rawText ?? "")
     .replace(/\r\n/g, "\n")
-    .replace(/[“”]/g, "\"")
-    .replace(/[‘’]/g, "'")
-    .replace(/\s+/g, " ")
-    .trim();
-}
+    .replace(/\r/g, "\n")
+    .split("\n");
 
-function splitIntoSentences(text) {
-  const t = normalizeCorpus(text);
+  // 2) Filter out unwanted lines
+  const filteredLines = lines.filter((line) => {
+    const s = line.trim();
+    if (!s) return false;
 
-  // Rough split on sentence-ending punctuation.
-  // This is intentionally conservative and simple.
-  const parts = t.split(/(?<=[.!?])\s+/g).map(s => s.trim());
+    if (s.includes("http")) return false;
+    if (/project\s+gutenberg/i.test(s)) return false;
+    if (/translated\s+by/i.test(s)) return false;
 
-  // Filter out headings & tiny fragments.
-  return parts.filter(s => {
-    if (s.length < 40) return false;
-    if (/^book\s+[ivxlcdm]+$/i.test(s)) return false;
-    if (/^provided by/i.test(s)) return false;
-    if (/^translated by/i.test(s)) return false;
-    if (/^-{5,}/.test(s)) return false;
+    // long dashes / separators
+    if (/[-—]{3,}/.test(s)) return false;
+
+    // BOOK ONE / BOOK TWO / BOOK IV etc
+    if (/^book\s+((one|two|three|four|five|six|seven|eight|nine|ten)|[ivxlcdm]+)\s*$/i.test(s)) {
+      return false;
+    }
+
     return true;
   });
+
+  // 3) Join remaining lines
+  const cleaned = filteredLines.join(" ").replace(/\s+/g, " ").trim();
+  if (!cleaned) return [];
+
+  // 4) Split into sentences
+  const out = cleaned
+    .split(/(?<=[.!?])\s+/g)
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  return out;
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#039;"
+  }[c]));
 }
 
 function computeAccuracy(targetStr, typedStr) {
@@ -85,81 +85,55 @@ function computeWpm(charsTyped, elapsedMs) {
   return Math.max(0, Math.round(words / minutes));
 }
 
-function escapeHtml(s) {
-  return s.replace(/[&<>"']/g, (c) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#039;"
-  }[c]));
-}
+function renderDiff(targetStr, typedStr) {
+  const out = [];
+  const n = targetStr.length;
 
-function render() {
-  // Render as spans per character so we can color each one
-  const spans = [];
+  for (let i = 0; i < n; i++) {
+    const expected = targetStr[i];
+    const got = typedStr[i];
 
-  for (let i = 0; i < target.length; i++) {
-    const expected = target[i];
-    const got = typed[i];
-
-    let cls = "ch upcoming";
-    if (got !== undefined) {
-      if (got === expected) cls = "ch correct";
-      else cls = expected === " " ? "ch wrong wrongSpace" : "ch wrong";
+    if (got === undefined) {
+      out.push(escapeHtml(expected === " " ? "\u00A0" : expected));
+      continue;
     }
 
-    // Keep spaces visible and width-correct
-    const content = expected === " " ? "&nbsp;" : escapeHtml(expected);
-    spans.push(`<span class="${cls}" data-i="${i}">${content}</span>`);
+    if (got === expected) {
+      out.push(`<span class="correct">${escapeHtml(expected === " " ? "\u00A0" : expected)}</span>`);
+    } else {
+      out.push(`<span class="incorrect">${escapeHtml(expected === " " ? "\u00A0" : expected)}</span>`);
+    }
   }
 
-  elSentence.innerHTML = spans.join("");
+  // If user typed extra chars beyond target, show them as incorrect at the end
+  if (typedStr.length > targetStr.length) {
+    const extra = typedStr.slice(targetStr.length);
+    out.push(`<span class="incorrect">${escapeHtml(extra)}</span>`);
+  }
 
-  // Update live stats
-  const elapsed = startedAt ? (Date.now() - startedAt) : 0;
-  elAcc.textContent = String(computeAccuracy(target, typed));
-  elWpm.textContent = String(computeWpm(typed.length, elapsed));
-
-  updateWeakLettersUI();
-  requestAnimationFrame(positionCaret);
-}
-
-function positionCaret() {
-  // caret should sit at the next character to type
-  const caretIndex = Math.min(typed.length, Math.max(0, target.length - 1));
-  const span = elSentence.querySelector(`span[data-i="${caretIndex}"]`);
-
-  if (!span) return;
-
-  const boxRect = elTypebox.getBoundingClientRect();
-  const chRect = span.getBoundingClientRect();
-
-  const x = chRect.left - boxRect.left;
-  const y = chRect.top - boxRect.top;
-
-  elCaret.style.transform = `translate(${x}px, ${y}px)`;
-  elCaret.style.height = `${chRect.height}px`;
+  elTarget.innerHTML = out.join("");
 }
 
 function resetSentenceProgress() {
-  typed = "";
+  elInput.value = "";
   startedAt = null;
-  lastTypeAt = null;
 
-  elFeedback.textContent = "";
   elWpm.textContent = "0";
   elAcc.textContent = "0";
+  elFeedback.textContent = "";
 
-  render();
+  renderDiff(target, "");
+  elInput.focus({ preventScroll: true });
 }
 
 function setSentence(idx) {
   sentenceIndex = idx;
   target = sentences[sentenceIndex] ?? "";
+
   elIdx.textContent = String(sentenceIndex + 1);
   elTotal.textContent = String(sentences.length);
 
   resetSentenceProgress();
-
-  // focus typing surface
-  elTypebox.focus({ preventScroll: true });
 }
 
 function nextSentence() {
@@ -168,137 +142,81 @@ function nextSentence() {
   setSentence(next);
 }
 
-function recordCharTiming(expectedChar, dt) {
-  const c = expectedChar.toLowerCase();
-  if (!/^[a-z]$/.test(c)) return;
-
-  // ignore huge pauses so distractions don't dominate weakness
-  if (dt > 2000) return;
-
-  const prev = charStats.get(c) ?? { count: 0, totalMs: 0 };
-  prev.count += 1;
-  prev.totalMs += dt;
-  charStats.set(c, prev);
-}
-
-function getSlowLetters(limit = 6) {
-  const rows = [];
-  for (const [c, s] of charStats.entries()) {
-    if (s.count < 6) continue;
-    rows.push({ c, avg: s.totalMs / s.count, count: s.count });
-  }
-  rows.sort((a, b) => b.avg - a.avg);
-  return rows.slice(0, limit);
-}
-
-function updateWeakLettersUI() {
-  const slow = getSlowLetters(6);
-  if (!slow.length) {
-    elWeakList.textContent = "–";
-    elFocus.textContent = "–";
-    return;
-  }
-
-  elFocus.textContent = slow[0].c;
-
-  elWeakList.textContent = slow
-    .map(x => `${x.c}: ${Math.round(x.avg)}ms (${x.count})`)
-    .join(" · ");
-}
-
-function finishIfComplete() {
-  if (typed !== target) return;
-
+function finishSentence() {
+  const typed = elInput.value;
   const elapsed = startedAt ? (Date.now() - startedAt) : 0;
-  const wpm = computeWpm(typed.length, elapsed);
+
+  const wpm = computeWpm(Math.min(typed.length, target.length), elapsed);
   const acc = computeAccuracy(target, typed);
 
-  if (bestWpm === null || wpm > bestWpm) bestWpm = wpm;
-  elBest.textContent = bestWpm === null ? "–" : `${bestWpm} WPM`;
+  elWpm.textContent = String(wpm);
+  elAcc.textContent = String(acc);
 
-  elFeedback.textContent = acc === 100
+  if (bestWpm === null || wpm > bestWpm) bestWpm = wpm;
+  elBest.textContent = bestWpm === null ? "–" : `${bestWpm}`;
+
+  elFeedback.textContent = typed === target
     ? "Complete. Press Enter for the next sentence."
-    : "Complete (with mistakes). Press Esc to retry or Enter to continue.";
+    : "Press Esc to retry or Enter to continue.";
 }
 
-elTypebox.addEventListener("keydown", (e) => {
+elInput.addEventListener("input", () => {
   if (!target) return;
 
-  if (isIgnorableKey(e)) return;
+  const typed = elInput.value;
 
-  if (e.key === "Escape") {
-    e.preventDefault();
-    resetSentenceProgress();
-    return;
+  if (startedAt === null && typed.length > 0) startedAt = Date.now();
+
+  renderDiff(target, typed);
+
+  const elapsed = startedAt ? (Date.now() - startedAt) : 0;
+  elAcc.textContent = String(computeAccuracy(target, typed));
+  elWpm.textContent = String(computeWpm(Math.min(typed.length, target.length), elapsed));
+
+  if (typed === target) {
+    finishSentence();
   }
+});
 
+elInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
     e.preventDefault();
     nextSentence();
     return;
   }
-
-  if (e.key === "Backspace") {
+  if (e.key === "Escape") {
     e.preventDefault();
-    if (typed.length > 0) typed = typed.slice(0, -1);
-    render();
+    resetSentenceProgress();
     return;
   }
-
-  // Only accept printable 1-char keys (includes space and punctuation)
-  if (e.key.length !== 1) return;
-
-  e.preventDefault();
-
-  // start timer on first character
-  const now = Date.now();
-  if (startedAt === null) startedAt = now;
-
-  // record per-char dt against the expected character position
-  if (lastTypeAt !== null) {
-    const expected = target[typed.length] ?? "";
-    recordCharTiming(expected, now - lastTypeAt);
-  }
-  lastTypeAt = now;
-
-  // append typed char (cap at target length; ignore extra)
-  if (typed.length < target.length) {
-    typed += e.key;
-  }
-
-  render();
-  finishIfComplete();
 });
 
-window.addEventListener("resize", () => positionCaret());
-
-// Make clicking the box focus it
-elTypebox.addEventListener("pointerdown", () => {
-  elTypebox.focus({ preventScroll: true });
+elTypeArea.addEventListener("pointerdown", () => {
+  elInput.focus({ preventScroll: true });
 });
 
 async function init() {
-  elSentence.textContent = "Loading Meditations…";
-  elTypebox.focus({ preventScroll: true });
+  elTarget.textContent = "Loading Meditations…";
+  elInput.focus({ preventScroll: true });
 
   let res;
   try {
     res = await fetch(TEXT_URL);
   } catch {
-    elSentence.textContent = "Could not load text file. Are you running via a local server?";
+    elTarget.textContent = "Could not load text file. Run via a local server (not file://).";
     return;
   }
 
   if (!res.ok) {
-    elSentence.textContent = "Could not load text file. Check texts/meditations.txt exists.";
+    elTarget.textContent = "Could not load text file. Check texts/meditations.txt exists.";
     return;
   }
 
-  const text = await res.text();
-  sentences = splitIntoSentences(text);
+  const raw = await res.text();
+  sentences = cleanPhilosophyText(raw);
 
   if (!sentences.length) {
-    elSentence.textContent = "No sentences found in text file.";
+    elTarget.textContent = "No sentences found after cleaning.";
     return;
   }
 
