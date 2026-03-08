@@ -125,7 +125,7 @@ async function processNotes() {
     return;
   }
 
-  if (API_KEY === "AIzaSyDuzeYVDeV_N6NwqsfVv4bXUuHBj19xB4M") {
+  if (API_KEY === "" || API_KEY === "GEMINI_API_KEY_PLACEHOLDER") {
     elFeedback.textContent = "Add your Gemini API key (API_KEY) in script.js to use AI generation.";
     return;
   }
@@ -785,8 +785,8 @@ async function init() {
   // Enable generate button immediately (Gemini is cloud-based, no local init needed)
   if (elGenerateBtn) elGenerateBtn.disabled = false;
   if (elAiStatus) {
-    elAiStatus.textContent = API_KEY === "AIzaSyDuzeYVDeV_N6NwqsfVv4bXUuHBj19xB4M" ? "No API Key" : "Gemini Ready";
-    elAiStatus.classList.add(API_KEY === "AIzaSyDuzeYVDeV_N6NwqsfVv4bXUuHBj19xB4M" ? "status--error" : "status--ready");
+    elAiStatus.textContent = (API_KEY === "" || API_KEY === "GEMINI_API_KEY_PLACEHOLDER") ? "No API Key" : "Gemini Ready";
+    elAiStatus.classList.add((API_KEY === "" || API_KEY === "GEMINI_API_KEY_PLACEHOLDER") ? "status--error" : "status--ready");
   }
 
   elTarget.textContent = "Loading…";
