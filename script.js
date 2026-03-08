@@ -1,5 +1,15 @@
 const TEXT_URL = "texts/meditations.txt";
 const WEAK_KEYS_STORAGE_KEY = "shift_weak_keys";
+const WROTE_TEXT_KEY = "wrote_text";
+const WROTE_MASTERY_KEY = "wrote_mastery";
+
+// Mastery thresholds
+const MASTERY_WPM = 60;
+const MASTERY_ACC = 95;
+const WEIGHT_MIN = 0.1;
+const WEIGHT_MAX = 5.0;
+const WEIGHT_DECAY = 0.5;   // multiply on success (high WPM + high acc)
+const WEIGHT_GROW = 1.5;    // multiply on failure
 
 const elTarget = document.getElementById("target-text");
 const elInput = document.getElementById("input-field");
@@ -13,6 +23,11 @@ const elTotal = document.getElementById("total");
 const elFeedback = document.getElementById("feedback");
 const elWeakKey = document.getElementById("weak-key");
 const elFocusLetters = document.getElementById("focus-letters");
+const elMastery = document.getElementById("mastery");
+
+const elNotesArea = document.getElementById("notes-area");
+const elFileInput = document.getElementById("file-input");
+const elLoadNotesBtn = document.getElementById("load-notes-btn");
 
 let sentences = [];
 let sentenceIndex = 0;
@@ -21,6 +36,9 @@ let target = "";
 let targetTokens = []; // pre-split tokens for the active target sentence
 let startedAt = null;
 let bestWpm = null;
+
+// Mastery: parallel array to sentences
+let mastery = []; // [{ weight: number, cleared: boolean }]
 
 // Per-character error tracking for the adaptive sentence selection
 let keyErrors = {};     // { char: errorCount } — persisted to localStorage
@@ -77,6 +95,40 @@ function cleanPhilosophyText(rawText) {
   return sentences;
 }
 
+/**
+ * Parse arbitrary user-pasted text into an array of sentence strings.
+ * Less aggressive than cleanPhilosophyText — no boilerplate filtering,
+ * just paragraph splitting and sentence boundary detection.
+ * @param {string} rawText - Raw text pasted or uploaded by the user.
+ * @returns {string[]} Array of non-empty sentence strings containing at least one letter.
+ */
+function parseUserText(rawText) {
+  const normalized = String(rawText ?? "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .trim();
+
+  if (!normalized) return [];
+
+  const paragraphs = normalized.split(/\n[ \t]*\n/);
+  const result = [];
+
+  for (const para of paragraphs) {
+    const text = para.replace(/\n/g, " ").replace(/\s+/g, " ").trim();
+    if (!text) continue;
+
+    // Split into sentences at sentence-ending punctuation followed by whitespace
+    const paraSentences = text
+      .split(/(?<=[.!?])\s+/g)
+      .map(s => s.trim())
+      .filter(s => s.length > 0 && /[a-zA-Z]/.test(s));
+
+    result.push(...paraSentences);
+  }
+
+  return result;
+}
+
 // Hoisted to module level — avoids allocating a new object literal on every character match
 const HTML_ESCAPE_MAP = Object.freeze({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;",
@@ -114,7 +166,7 @@ function loadWeakKeys() {
     const saved = localStorage.getItem(WEAK_KEYS_STORAGE_KEY);
     if (saved) keyErrors = JSON.parse(saved);
   } catch (err) {
-    console.warn("shift: could not load weak keys from localStorage:", err);
+    console.warn("wrote: could not load weak keys from localStorage:", err);
     keyErrors = {};
   }
 }
@@ -127,7 +179,7 @@ function saveWeakKeys() {
     try {
       localStorage.setItem(WEAK_KEYS_STORAGE_KEY, JSON.stringify(keyErrors));
     } catch (err) {
-      console.warn("shift: could not save weak keys to localStorage:", err);
+      console.warn("wrote: could not save weak keys to localStorage:", err);
     }
   }, 300);
 }
@@ -171,6 +223,138 @@ function updateFocusLettersDisplay() {
 }
 
 // --- end Weak Keys ---
+
+// --- Mastery helpers ---
+
+/**
+ * Initialise the mastery tracking array with default values.
+ * Each entry starts at weight 1.0 (unbiased) and cleared = false.
+ * Call whenever a new sentence set is loaded.
+ * @param {number} count - Number of sentences to create entries for.
+ */
+function initMastery(count) {
+  mastery = Array.from({ length: count }, () => ({ weight: 1.0, cleared: false }));
+}
+
+function loadMastery() {
+  try {
+    const saved = localStorage.getItem(WROTE_MASTERY_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      // Only restore if lengths match (same text loaded)
+      if (Array.isArray(parsed) && parsed.length === sentences.length) {
+        mastery = parsed;
+        return;
+      }
+    }
+  } catch (err) {
+    console.warn("wrote: could not load mastery from localStorage:", err);
+  }
+  initMastery(sentences.length);
+}
+
+let _saveMasteryTimer = 0;
+
+function saveMastery() {
+  clearTimeout(_saveMasteryTimer);
+  _saveMasteryTimer = setTimeout(() => {
+    try {
+      localStorage.setItem(WROTE_MASTERY_KEY, JSON.stringify(mastery));
+    } catch (err) {
+      console.warn("wrote: could not save mastery to localStorage:", err);
+    }
+  }, 300);
+}
+
+function updateMastery(idx, wpm, acc) {
+  const m = mastery[idx];
+  if (!m) return;
+  if (wpm >= MASTERY_WPM && acc >= MASTERY_ACC) {
+    m.cleared = true;
+    m.weight = Math.max(WEIGHT_MIN, m.weight * WEIGHT_DECAY);
+  } else {
+    m.cleared = false;
+    m.weight = Math.min(WEIGHT_MAX, m.weight * WEIGHT_GROW);
+  }
+  saveMastery();
+}
+
+function getMasteryPercent() {
+  if (!mastery.length) return 0;
+  const cleared = mastery.filter(m => m.cleared).length;
+  return Math.round((cleared / mastery.length) * 100);
+}
+
+function updateMasteryDisplay() {
+  elMastery.textContent = String(getMasteryPercent());
+}
+
+// --- end Mastery ---
+
+// --- Custom text persistence ---
+
+/**
+ * Persist user-provided raw text to localStorage so it can be restored
+ * the next time the page is loaded.
+ * @param {string} text - Raw text string to save.
+ */
+function saveCustomText(text) {
+  try {
+    localStorage.setItem(WROTE_TEXT_KEY, text);
+  } catch (err) {
+    console.warn("wrote: could not save custom text to localStorage:", err);
+  }
+}
+
+/**
+ * Retrieve previously saved custom text from localStorage.
+ * @returns {string|null} The saved raw text string, or null if none exists or
+ *   an error occurs reading from localStorage.
+ */
+function loadCustomText() {
+  try {
+    return localStorage.getItem(WROTE_TEXT_KEY);
+  } catch {
+    return null;
+  }
+}
+
+// --- end Custom text ---
+
+// --- Weighted random sentence selector ---
+
+/**
+ * Select a sentence index using weighted-random sampling.
+ * Sentences with a higher mastery weight are picked more frequently,
+ * ensuring that difficult sentences appear more often until mastered.
+ * @param {number} [excludeIdx=-1] - Index to exclude (avoids repeating the
+ *   current sentence immediately). Defaults to -1 (no exclusion).
+ * @returns {number} The selected sentence index.
+ */
+function pickWeightedRandom(excludeIdx = -1) {
+  let total = 0;
+  for (let i = 0; i < mastery.length; i++) {
+    if (i !== excludeIdx) total += mastery[i].weight;
+  }
+  if (total <= 0) {
+    // Fallback: first index that isn't excluded
+    const fallback = mastery.findIndex((_, i) => i !== excludeIdx);
+    return fallback >= 0 ? fallback : 0;
+  }
+  let r = Math.random() * total;
+  for (let i = 0; i < mastery.length; i++) {
+    if (i === excludeIdx) continue;
+    r -= mastery[i].weight;
+    if (r <= 0) return i;
+  }
+  // Floating-point edge case: return last valid index
+  for (let i = mastery.length - 1; i >= 0; i--) {
+    if (i !== excludeIdx) return i;
+  }
+  return 0;
+}
+
+// --- end Weighted random ---
 
 function updateProgressCssVar(typedLen, targetLen) {
   const pct = targetLen > 0 ? Math.min(100, Math.max(0, (typedLen / targetLen) * 100)) : 0;
@@ -286,16 +470,8 @@ function setSentence(idx) {
 
 function nextSentence() {
   if (!sentences.length) return;
-  const weakKey = getWeakestKey();
-  if (weakKey) {
-    const candidates = (charMap.get(weakKey.toLowerCase()) ?? [])
-      .filter(i => i !== sentenceIndex);
-    if (candidates.length) {
-      setSentence(candidates[Math.floor(Math.random() * candidates.length)]);
-      return;
-    }
-  }
-  const next = (sentenceIndex + 1) % sentences.length;
+  // Use weighted random: sentences with higher weight appear more often
+  const next = sentences.length > 1 ? pickWeightedRandom(sentenceIndex) : sentenceIndex;
   setSentence(next);
 }
 
@@ -312,13 +488,17 @@ function finishSentence() {
   if (bestWpm === null || wpm > bestWpm) bestWpm = wpm;
   elBest.textContent = bestWpm === null ? "–" : `${bestWpm}`;
 
+  // Update mastery for this sentence
+  updateMastery(sentenceIndex, wpm, acc);
+  updateMasteryDisplay();
+
   elFeedback.textContent = typed === target
     ? "Complete. Press Enter for the next sentence."
     : "Press Esc to retry or Enter to continue.";
 }
 
 function focusTyping() {
-  // On some browsers, focusing an invisible input is flaky unless it’s in direct user gesture.
+  // On some browsers, focusing an invisible input is flaky unless it's in direct user gesture.
   // We try anyway; click handler below makes it reliable.
   elInput.focus({ preventScroll: true });
 }
@@ -385,7 +565,7 @@ elInput.addEventListener("keydown", (e) => {
 });
 
 /* Improved click-to-focus:
-   - pointerdown is the most reliable “user gesture” to allow focus on mobile
+   - pointerdown is the most reliable "user gesture" to allow focus on mobile
    - also handle click, and when the box is focused via keyboard */
 elTypeArea.addEventListener("pointerdown", (e) => {
   e.preventDefault();
@@ -401,28 +581,95 @@ elTypeArea.addEventListener("focus", () => {
   focusTyping();
 });
 
+// --- Notes panel event handlers ---
+
+/**
+ * Parse and load user-provided text as the active sentence set.
+ * Replaces the current sentences, resets mastery tracking to defaults,
+ * and persists both the text and the fresh mastery data to localStorage.
+ * Shows an error in the feedback area if no sentences could be parsed.
+ * @param {string} rawText - Raw text string from paste or file upload.
+ */
+function loadUserText(rawText) {
+  const parsed = parseUserText(rawText);
+  if (!parsed.length) {
+    elFeedback.textContent = "No sentences found in the provided text. Please try again.";
+    return;
+  }
+  sentences = parsed;
+  saveCustomText(rawText);
+  buildCharMap();
+  initMastery(sentences.length);
+  saveMastery();
+  bestWpm = null;
+  elBest.textContent = "–";
+  loadWeakKeys();
+  updateWeakKeyDisplay();
+  updateFocusLettersDisplay();
+  updateMasteryDisplay();
+  setSentence(pickWeightedRandom());
+}
+
+elLoadNotesBtn.addEventListener("click", () => {
+  const text = elNotesArea.value.trim();
+  if (!text) {
+    elFeedback.textContent = "Please paste some text before loading.";
+    return;
+  }
+  loadUserText(text);
+  // Collapse notes panel after loading
+  document.getElementById("notes-panel").removeAttribute("open");
+  focusTyping();
+});
+
+elFileInput.addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    elNotesArea.value = ev.target.result;
+    loadUserText(ev.target.result);
+    document.getElementById("notes-panel").removeAttribute("open");
+    focusTyping();
+  };
+  reader.readAsText(file);
+  // Reset so the same file can be reloaded
+  e.target.value = "";
+});
+
+// --- end Notes panel ---
+
 async function init() {
-  elTarget.textContent = "Loading Meditations…";
+  elTarget.textContent = "Loading…";
   focusTyping();
 
-  let res;
-  try {
-    res = await fetch(TEXT_URL);
-  } catch {
-    elTarget.textContent = "Could not load text file. Run via a local server (not file://).";
-    return;
-  }
+  // Check for previously saved custom text
+  const savedText = loadCustomText();
 
-  if (!res.ok) {
-    elTarget.textContent = "Could not load text file. Check texts/meditations.txt exists.";
-    return;
-  }
+  if (savedText) {
+    sentences = parseUserText(savedText);
+    elNotesArea.value = savedText;
+  } else {
+    // Fall back to bundled meditations.txt
+    let res;
+    try {
+      res = await fetch(TEXT_URL);
+    } catch {
+      elTarget.textContent = "Could not load text file. Paste your notes below to get started.";
+      return;
+    }
 
-  const raw = await res.text();
-  sentences = cleanPhilosophyText(raw);
+    if (!res.ok) {
+      elTarget.textContent = "Could not load texts/meditations.txt. Paste your notes below.";
+      return;
+    }
+
+    const raw = await res.text();
+    sentences = cleanPhilosophyText(raw);
+  }
 
   if (!sentences.length) {
-    elTarget.textContent = "No sentences found after cleaning.";
+    elTarget.textContent = "No sentences found. Paste your notes below.";
     return;
   }
 
@@ -432,9 +679,11 @@ async function init() {
   elBest.textContent = "–";
 
   loadWeakKeys();
+  loadMastery();
   updateWeakKeyDisplay();
   updateFocusLettersDisplay();
-  setSentence(0);
+  updateMasteryDisplay();
+  setSentence(pickWeightedRandom());
 }
 
 init();

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Shift — Meditations</title>
+  <title>Wrote — Rote Memorization</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 
@@ -11,8 +11,8 @@
   <main class="app">
     <header class="header">
       <div>
-        <h1>Shift</h1>
-        <p class="subtle">Stoic typing practice with Marcus Aurelius’ <em>Meditations</em>.</p>
+        <h1>Wrote</h1>
+        <p class="subtle">Rote-memorization typing tool.</p>
       </div>
 
       <div class="header__right">
@@ -29,6 +29,7 @@
         <span>Best <strong id="best">–</strong></span>
         <span>Weak Key <strong id="weak-key">–</strong></span>
         <span>Focus Letters <strong id="focus-letters">–</strong></span>
+        <span>Mastery <strong id="mastery">0</strong>%</span>
       </div>
 
       <div class="type-area" id="type-area" tabindex="0" role="button" aria-label="Typing area (click to focus)">
@@ -48,8 +49,25 @@
       <div id="feedback" class="feedback subtle"></div>
     </section>
 
+    <details class="notes-panel" id="notes-panel">
+      <summary class="notes-summary">&#x1F4CB; Paste Notes / Load File</summary>
+      <div class="notes-body">
+        <textarea
+          id="notes-area"
+          placeholder="Paste your study notes here…"
+          rows="5"
+          aria-label="Paste notes text"
+        ></textarea>
+        <div class="notes-actions">
+          <label class="btn" for="file-input">&#x1F4C2; Load from File</label>
+          <input id="file-input" type="file" accept=".txt" aria-label="Upload text file" />
+          <button id="load-notes-btn" class="btn btn--accent">Load Notes</button>
+        </div>
+      </div>
+    </details>
+
     <footer class="footer subtle">
-      Click the text area to focus. WPM and Accuracy are session-only; Weak Keys are saved across sessions.
+      Click the text area to focus. Mastery, weak keys, and custom text are saved across sessions.
     </footer>
   </main>
 

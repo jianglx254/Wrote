@@ -18,7 +18,8 @@
 }
 
 *{ box-sizing: border-box; }
-html, body{ height: 100%; }
+html{ height: 100%; }
+body{ min-height: 100%; }
 
 body{
   background-color: var(--bg);
@@ -30,7 +31,7 @@ body{
   align-items: center;
   justify-content: center;
 
-  height: 100vh;
+  min-height: 100vh;
   margin: 0;
   padding: 22px 18px;
 }
@@ -182,4 +183,94 @@ h1{ margin: 0; font-weight: 700; letter-spacing: 0.3px; }
 .footer{
   margin-top: 12px;
   font-size: 13px;
+}
+
+/* --- Notes panel --- */
+
+.notes-panel{
+  margin-top: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+.notes-summary{
+  padding: 10px 16px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 13px;
+  color: var(--muted);
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 12px;
+}
+
+.notes-summary::-webkit-details-marker{ display: none; }
+
+.notes-panel[open] > .notes-summary{
+  border-bottom: 1px solid var(--border);
+  border-radius: 12px 12px 0 0;
+}
+
+.notes-body{
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+#notes-area{
+  width: 100%;
+  min-height: 100px;
+  background: rgba(0,0,0,0.22);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 13px;
+  padding: 10px;
+  resize: vertical;
+  outline: none;
+}
+
+#notes-area:focus{
+  border-color: rgba(0,255,157,0.55);
+  box-shadow: 0 0 0 3px rgba(0,255,157,0.10);
+}
+
+.notes-actions{
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+#file-input{ display: none; }
+
+.btn{
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 14px;
+  background: rgba(255,255,255,0.02);
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+  font-family: inherit;
+  line-height: 1.4;
+}
+
+.btn:hover{
+  background: rgba(255,255,255,0.06);
+  color: var(--text);
+}
+
+.btn--accent{
+  border-color: rgba(0,255,157,0.4);
+  color: var(--accent);
+}
+
+.btn--accent:hover{
+  background: rgba(0,255,157,0.08);
 }
