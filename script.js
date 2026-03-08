@@ -111,11 +111,12 @@ function renderDiff(targetStr, typedStr) {
     if (/^\s+$/.test(token)) {
       // Render spaces one-by-one so the cursor can land on them
       for (let i = 0; i < token.length; i++) {
-        const ch = token[i] === " " ? "&nbsp;" : escapeHtml(token[i]);
         if (globalIndex === cursorPos) {
-          html.push(`<span class="cursor">${ch}</span>`);
+          // Use &nbsp; inside the cursor span so the underline stays visible
+          html.push(`<span class="cursor">&nbsp;</span>`);
         } else {
-          html.push(ch);
+          // Use a regular space so the browser can wrap the line here
+          html.push(token[i] === " " ? " " : escapeHtml(token[i]));
         }
         globalIndex++;
       }
