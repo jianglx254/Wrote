@@ -12,6 +12,7 @@ const elIdx = document.getElementById("idx");
 const elTotal = document.getElementById("total");
 const elFeedback = document.getElementById("feedback");
 const elWeakKey = document.getElementById("weak-key");
+const elFocusLetters = document.getElementById("focus-letters");
 
 let sentences = [];
 let sentenceIndex = 0;
@@ -22,7 +23,8 @@ let startedAt = null;
 let bestWpm = null;
 
 // Per-character error tracking for the adaptive sentence selection
-let keyAccuracy = {};   // { char: errorCount } — persisted to localStorage
+let keyErrors = {};     // { char: errorCount } — persisted to localStorage
+let charMap = new Map(); // letter (a-z) -> array of sentence indices containing that letter
 let _prevTypedLen = 0;  // tracks input length between keystrokes to detect new characters
 
 // RAF render-throttling state
@@ -110,10 +112,10 @@ function computeWpm(charsTyped, elapsedMs) {
 function loadWeakKeys() {
   try {
     const saved = localStorage.getItem(WEAK_KEYS_STORAGE_KEY);
-    if (saved) keyAccuracy = JSON.parse(saved);
+    if (saved) keyErrors = JSON.parse(saved);
   } catch (err) {
     console.warn("shift: could not load weak keys from localStorage:", err);
-    keyAccuracy = {};
+    keyErrors = {};
   }
 }
 
@@ -123,7 +125,7 @@ function saveWeakKeys() {
   clearTimeout(_saveWeakKeysTimer);
   _saveWeakKeysTimer = setTimeout(() => {
     try {
-      localStorage.setItem(WEAK_KEYS_STORAGE_KEY, JSON.stringify(keyAccuracy));
+      localStorage.setItem(WEAK_KEYS_STORAGE_KEY, JSON.stringify(keyErrors));
     } catch (err) {
       console.warn("shift: could not save weak keys to localStorage:", err);
     }
@@ -133,7 +135,7 @@ function saveWeakKeys() {
 function getWeakestKey() {
   let maxErrors = 0;
   let weakKey = null;
-  for (const [ch, count] of Object.entries(keyAccuracy)) {
+  for (const [ch, count] of Object.entries(keyErrors)) {
     if (count > maxErrors) {
       maxErrors = count;
       weakKey = ch;
@@ -142,18 +144,30 @@ function getWeakestKey() {
   return weakKey;
 }
 
-function findSentenceWithChar(ch) {
-  const candidates = [];
-  for (let i = 0; i < sentences.length; i++) {
-    if (i !== sentenceIndex && sentences[i].includes(ch)) candidates.push(i);
+function buildCharMap() {
+  charMap = new Map();
+  for (let c = "a".charCodeAt(0); c <= "z".charCodeAt(0); c++) {
+    charMap.set(String.fromCharCode(c), []);
   }
-  if (!candidates.length) return null;
-  return candidates[Math.floor(Math.random() * candidates.length)];
+  for (let i = 0; i < sentences.length; i++) {
+    const uniqueLetters = new Set(sentences[i].toLowerCase().replace(/[^a-z]/g, ""));
+    for (const letter of uniqueLetters) {
+      if (charMap.has(letter)) charMap.get(letter).push(i);
+    }
+  }
 }
 
 function updateWeakKeyDisplay() {
   const weakKey = getWeakestKey();
   elWeakKey.textContent = weakKey ?? "–";
+}
+
+function updateFocusLettersDisplay() {
+  const top3 = Object.entries(keyErrors)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([ch]) => ch);
+  elFocusLetters.textContent = top3.length ? top3.join(", ") : "–";
 }
 
 // --- end Weak Keys ---
@@ -274,9 +288,10 @@ function nextSentence() {
   if (!sentences.length) return;
   const weakKey = getWeakestKey();
   if (weakKey) {
-    const idx = findSentenceWithChar(weakKey);
-    if (idx !== null) {
-      setSentence(idx);
+    const candidates = (charMap.get(weakKey.toLowerCase()) ?? [])
+      .filter(i => i !== sentenceIndex);
+    if (candidates.length) {
+      setSentence(candidates[Math.floor(Math.random() * candidates.length)]);
       return;
     }
   }
@@ -337,9 +352,10 @@ elInput.addEventListener("input", () => {
     const pos = typed.length - 1;
     if (pos < target.length && typed[pos] !== target[pos]) {
       const ch = target[pos];
-      keyAccuracy[ch] = (keyAccuracy[ch] || 0) + 1;
+      keyErrors[ch] = (keyErrors[ch] || 0) + 1;
       saveWeakKeys();
       updateWeakKeyDisplay();
+      updateFocusLettersDisplay();
     }
   }
   _prevTypedLen = typed.length;
@@ -410,11 +426,14 @@ async function init() {
     return;
   }
 
+  buildCharMap();
+
   bestWpm = null;
   elBest.textContent = "–";
 
   loadWeakKeys();
   updateWeakKeyDisplay();
+  updateFocusLettersDisplay();
   setSentence(0);
 }
 
