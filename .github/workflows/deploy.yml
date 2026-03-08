@@ -18,10 +18,14 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Inject API Key
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          # Finds the placeholder in script.js and replaces it with the secret
-          # We use double quotes in the sed command to handle the secret correctly
-          sed -i "s/GEMINI_API_KEY_PLACEHOLDER/${{ secrets.GEMINI_API_KEY }}/g" script.js
+          # Finds the placeholder in script.js and replaces it with the secret.
+          # The secret is passed via an env var (not inline) so shell-special characters
+          # in the key are handled safely. The | delimiter avoids conflicts with any /
+          # characters that may appear in the key value.
+          sed -i "s|GEMINI_API_KEY_PLACEHOLDER|${GEMINI_API_KEY}|g" script.js
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
