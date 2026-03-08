@@ -86,6 +86,12 @@ h1{ margin: 0; font-weight: 700; letter-spacing: 0.3px; }
 
 .stats strong{ color: var(--text); font-weight: 700; }
 
+.stats span:not(:last-child)::after{
+  content: "·";
+  margin-left: 18px;
+  color: var(--accent);
+}
+
 .type-area{
   position: relative;
   border: 1px solid rgba(224,224,224,0.18);
@@ -133,7 +139,7 @@ h1{ margin: 0; font-weight: 700; letter-spacing: 0.3px; }
   white-space: normal;
   overflow-wrap: normal;
   word-break: normal;
-  hyphens: auto;
+  hyphens: none;
 }
 
 .correct{ color: #ffffff; }
