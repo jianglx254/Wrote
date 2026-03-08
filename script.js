@@ -15,8 +15,13 @@ let sentences = [];
 let sentenceIndex = 0;
 
 let target = "";
+let targetTokens = []; // pre-split tokens for the active target sentence
 let startedAt = null;
 let bestWpm = null;
+
+// RAF render-throttling state
+let _rafId = 0;
+let _pendingTyped = "";
 
 function cleanPhilosophyText(rawText) {
   const normalized = String(rawText ?? "")
@@ -59,10 +64,13 @@ function cleanPhilosophyText(rawText) {
   return sentences;
 }
 
+// Hoisted to module level — avoids allocating a new object literal on every character match
+const HTML_ESCAPE_MAP = Object.freeze({
+  "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;",
+});
+
 function escapeHtml(s) {
-  return s.replace(/[&<>"']/g, (c) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#039;"
-  }[c]));
+  return s.replace(/[&<>"']/g, (c) => HTML_ESCAPE_MAP[c]);
 }
 
 function computeAccuracy(targetStr, typedStr) {
@@ -100,7 +108,7 @@ function updateProgressCssVar(typedLen, targetLen) {
 function renderDiff(targetStr, typedStr) {
   updateProgressCssVar(typedStr.length, targetStr.length);
 
-  const tokens = targetStr.split(/(\s+)/); // keeps spaces
+  const tokens = targetTokens; // use tokens pre-computed in setSentence()
   let globalIndex = 0;
   const html = [];
   const cursorPos = typedStr.length; // position of the next character to type
@@ -162,6 +170,8 @@ function resetSentenceProgress() {
   elAcc.textContent = "0";
   elFeedback.textContent = "";
 
+  // Cancel any pending RAF render before doing an immediate reset render
+  cancelPendingRender();
   renderDiff(target, "");
   focusTyping();
 }
@@ -169,6 +179,7 @@ function resetSentenceProgress() {
 function setSentence(idx) {
   sentenceIndex = idx;
   target = sentences[sentenceIndex] ?? "";
+  targetTokens = target.split(/(\s+)/); // pre-tokenize once per sentence
 
   elIdx.textContent = String(sentenceIndex + 1);
   elTotal.textContent = String(sentences.length);
@@ -206,6 +217,23 @@ function focusTyping() {
   elInput.focus({ preventScroll: true });
 }
 
+// RAF-throttled rendering: coalesces rapid keystrokes into a single paint frame,
+// preventing layout thrash when the user types faster than 60 fps.
+function cancelPendingRender() {
+  cancelAnimationFrame(_rafId);
+  _rafId = 0;
+}
+
+function scheduleRender(typedStr) {
+  _pendingTyped = typedStr;
+  if (!_rafId) {
+    _rafId = requestAnimationFrame(() => {
+      _rafId = 0;
+      renderDiff(target, _pendingTyped);
+    });
+  }
+}
+
 elInput.addEventListener("input", () => {
   if (!target) return;
 
@@ -213,13 +241,18 @@ elInput.addEventListener("input", () => {
 
   if (startedAt === null && typed.length > 0) startedAt = Date.now();
 
-  renderDiff(target, typed);
-
   const elapsed = startedAt ? (Date.now() - startedAt) : 0;
   elAcc.textContent = String(computeAccuracy(target, typed));
   elWpm.textContent = String(computeWpm(Math.min(typed.length, target.length), elapsed));
 
-  if (typed === target) finishSentence();
+  if (typed === target) {
+    // Sentence complete: cancel any pending RAF and render the final state immediately
+    cancelPendingRender();
+    renderDiff(target, typed);
+    finishSentence();
+  } else {
+    scheduleRender(typed);
+  }
 });
 
 elInput.addEventListener("keydown", (e) => {
