@@ -1,5 +1,5 @@
 // The YAML script will look for this exact string
-const API_KEY = "";
+const API_KEY = "AIzaSyDuzeYVDeV_N6NwqsfVv4bXUuHBj19xB4M";
 
 
 
