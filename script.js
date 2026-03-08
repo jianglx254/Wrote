@@ -19,13 +19,11 @@ let startedAt = null;
 let bestWpm = null;
 
 function cleanPhilosophyText(rawText) {
-  // 1) Split into lines
   const lines = String(rawText ?? "")
     .replace(/\r\n/g, "\n")
     .replace(/\r/g, "\n")
     .split("\n");
 
-  // 2) Filter out unwanted lines
   const filteredLines = lines.filter((line) => {
     const s = line.trim();
     if (!s) return false;
@@ -33,11 +31,8 @@ function cleanPhilosophyText(rawText) {
     if (s.includes("http")) return false;
     if (/project\s+gutenberg/i.test(s)) return false;
     if (/translated\s+by/i.test(s)) return false;
-
-    // long dashes / separators
     if (/[-—]{3,}/.test(s)) return false;
 
-    // BOOK ONE / BOOK TWO / BOOK IV etc
     if (/^book\s+((one|two|three|four|five|six|seven|eight|nine|ten)|[ivxlcdm]+)\s*$/i.test(s)) {
       return false;
     }
@@ -45,17 +40,13 @@ function cleanPhilosophyText(rawText) {
     return true;
   });
 
-  // 3) Join remaining lines
   const cleaned = filteredLines.join(" ").replace(/\s+/g, " ").trim();
   if (!cleaned) return [];
 
-  // 4) Split into sentences
-  const out = cleaned
+  return cleaned
     .split(/(?<=[.!?])\s+/g)
     .map(s => s.trim())
     .filter(Boolean);
-
-  return out;
 }
 
 function escapeHtml(s) {
@@ -85,33 +76,57 @@ function computeWpm(charsTyped, elapsedMs) {
   return Math.max(0, Math.round(words / minutes));
 }
 
+function updateProgressCssVar(typedLen, targetLen) {
+  const pct = targetLen > 0 ? Math.min(100, Math.max(0, (typedLen / targetLen) * 100)) : 0;
+  elTypeArea.style.setProperty("--progress", `${pct.toFixed(2)}%`);
+}
+
+/**
+ * Word-friendly rendering:
+ * - keep whitespace as actual break opportunities
+ * - still color correctness per character
+ */
 function renderDiff(targetStr, typedStr) {
-  const out = [];
-  const n = targetStr.length;
+  updateProgressCssVar(typedStr.length, targetStr.length);
 
-  for (let i = 0; i < n; i++) {
-    const expected = targetStr[i];
-    const got = typedStr[i];
+  const tokens = targetStr.split(/(\s+)/); // keeps spaces
+  let globalIndex = 0;
+  const html = [];
 
-    if (got === undefined) {
-      out.push(escapeHtml(expected === " " ? "\u00A0" : expected));
+  for (const token of tokens) {
+    if (!token) continue;
+
+    if (/^\s+$/.test(token)) {
+      // preserve spaces; allow wrapping at them
+      html.push(escapeHtml(token).replace(/ /g, "&nbsp;"));
+      globalIndex += token.length;
       continue;
     }
 
-    if (got === expected) {
-      out.push(`<span class="correct">${escapeHtml(expected === " " ? "\u00A0" : expected)}</span>`);
-    } else {
-      out.push(`<span class="incorrect">${escapeHtml(expected === " " ? "\u00A0" : expected)}</span>`);
+    // word-like token; render per-char correctness
+    for (let i = 0; i < token.length; i++) {
+      const expected = token[i];
+      const got = typedStr[globalIndex];
+
+      if (got === undefined) {
+        html.push(escapeHtml(expected));
+      } else if (got === expected) {
+        html.push(`<span class="correct">${escapeHtml(expected)}</span>`);
+      } else {
+        html.push(`<span class="incorrect">${escapeHtml(expected)}</span>`);
+      }
+
+      globalIndex++;
     }
   }
 
-  // If user typed extra chars beyond target, show them as incorrect at the end
+  // show extra typed chars (soft incorrect)
   if (typedStr.length > targetStr.length) {
     const extra = typedStr.slice(targetStr.length);
-    out.push(`<span class="incorrect">${escapeHtml(extra)}</span>`);
+    html.push(`<span class="incorrect">${escapeHtml(extra)}</span>`);
   }
 
-  elTarget.innerHTML = out.join("");
+  elTarget.innerHTML = html.join("");
 }
 
 function resetSentenceProgress() {
@@ -123,7 +138,7 @@ function resetSentenceProgress() {
   elFeedback.textContent = "";
 
   renderDiff(target, "");
-  elInput.focus({ preventScroll: true });
+  focusTyping();
 }
 
 function setSentence(idx) {
@@ -160,6 +175,12 @@ function finishSentence() {
     : "Press Esc to retry or Enter to continue.";
 }
 
+function focusTyping() {
+  // On some browsers, focusing an invisible input is flaky unless it’s in direct user gesture.
+  // We try anyway; click handler below makes it reliable.
+  elInput.focus({ preventScroll: true });
+}
+
 elInput.addEventListener("input", () => {
   if (!target) return;
 
@@ -173,31 +194,39 @@ elInput.addEventListener("input", () => {
   elAcc.textContent = String(computeAccuracy(target, typed));
   elWpm.textContent = String(computeWpm(Math.min(typed.length, target.length), elapsed));
 
-  if (typed === target) {
-    finishSentence();
-  }
+  if (typed === target) finishSentence();
 });
 
 elInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
     e.preventDefault();
     nextSentence();
-    return;
-  }
-  if (e.key === "Escape") {
+  } else if (e.key === "Escape") {
     e.preventDefault();
     resetSentenceProgress();
-    return;
   }
 });
 
-elTypeArea.addEventListener("pointerdown", () => {
-  elInput.focus({ preventScroll: true });
+/* Improved click-to-focus:
+   - pointerdown is the most reliable “user gesture” to allow focus on mobile
+   - also handle click, and when the box is focused via keyboard */
+elTypeArea.addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  focusTyping();
+});
+
+elTypeArea.addEventListener("click", (e) => {
+  e.preventDefault();
+  focusTyping();
+});
+
+elTypeArea.addEventListener("focus", () => {
+  focusTyping();
 });
 
 async function init() {
   elTarget.textContent = "Loading Meditations…";
-  elInput.focus({ preventScroll: true });
+  focusTyping();
 
   let res;
   try {
