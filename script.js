@@ -1,38 +1,88 @@
 const TEXT_URL = "texts/meditations.txt";
 
 const elSentence = document.getElementById("sentence");
-const elInput = document.getElementById("input");
+const elTypebox = document.getElementById("typebox");
+const elCaret = document.getElementById("caret");
+
 const elWpm = document.getElementById("wpm");
 const elAcc = document.getElementById("acc");
 const elBest = document.getElementById("best");
 const elIdx = document.getElementById("idx");
 const elTotal = document.getElementById("total");
 const elFeedback = document.getElementById("feedback");
-const btnNext = document.getElementById("next");
-const btnReload = document.getElementById("reload");
+const elWeakList = document.getElementById("weakList");
+const elFocus = document.getElementById("focus");
 
 let sentences = [];
-let i = 0;
+let sentenceIndex = 0;
 
-let startedAt = null;          // ms timestamp
-let currentTarget = "";
+let target = "";
+let typed = ""; // what the user has typed so far (we control this)
+let startedAt = null;
+
 let bestWpm = null;
 
-function splitIntoSentences(text) {
-  // Normalize whitespace
-  const t = text
+// per-character timing stats (session only)
+const charStats = new Map(); // char -> {count,totalMs}
+let lastTypeAt = null;
+
+function isIgnorableKey(e) {
+  return (
+    e.ctrlKey || e.metaKey || e.altKey ||
+    e.key === "Shift" ||
+    e.key === "CapsLock" ||
+    e.key === "Tab" ||
+    e.key === "ArrowLeft" || e.key === "ArrowRight" ||
+    e.key === "ArrowUp" || e.key === "ArrowDown"
+  );
+}
+
+function normalizeCorpus(text) {
+  return text
     .replace(/\r\n/g, "\n")
+    .replace(/[“”]/g, "\"")
+    .replace(/[‘’]/g, "'")
     .replace(/\s+/g, " ")
     .trim();
+}
 
-  // Basic sentence split (good-enough for a first pass)
-  // Keeps ., !, ? as end punctuation.
-  const parts = t.split(/(?<=[.!?])\s+/g);
+function splitIntoSentences(text) {
+  const t = normalizeCorpus(text);
 
-  // Filter out tiny fragments
-  return parts
-    .map(s => s.trim())
-    .filter(s => s.length >= 25);
+  // Rough split on sentence-ending punctuation.
+  // This is intentionally conservative and simple.
+  const parts = t.split(/(?<=[.!?])\s+/g).map(s => s.trim());
+
+  // Filter out headings & tiny fragments.
+  return parts.filter(s => {
+    if (s.length < 40) return false;
+    if (/^book\s+[ivxlcdm]+$/i.test(s)) return false;
+    if (/^provided by/i.test(s)) return false;
+    if (/^translated by/i.test(s)) return false;
+    if (/^-{5,}/.test(s)) return false;
+    return true;
+  });
+}
+
+function computeAccuracy(targetStr, typedStr) {
+  if (!typedStr.length) return 0;
+
+  const n = Math.min(targetStr.length, typedStr.length);
+  let correct = 0;
+
+  for (let i = 0; i < n; i++) {
+    if (typedStr[i] === targetStr[i]) correct++;
+  }
+
+  const total = typedStr.length;
+  return Math.max(0, Math.round((correct / total) * 100));
+}
+
+function computeWpm(charsTyped, elapsedMs) {
+  if (!charsTyped || elapsedMs <= 0) return 0;
+  const minutes = elapsedMs / 60000;
+  const words = charsTyped / 5;
+  return Math.max(0, Math.round(words / minutes));
 }
 
 function escapeHtml(s) {
@@ -41,127 +91,206 @@ function escapeHtml(s) {
   }[c]));
 }
 
-function renderDiff(target, typed) {
-  // Highlight correct prefix (good), incorrect part (bad), remaining (rest)
-  let goodLen = 0;
-  const m = Math.min(target.length, typed.length);
-  for (let k = 0; k < m; k++) {
-    if (target[k] === typed[k]) goodLen++;
-    else break;
+function render() {
+  // Render as spans per character so we can color each one
+  const spans = [];
+
+  for (let i = 0; i < target.length; i++) {
+    const expected = target[i];
+    const got = typed[i];
+
+    let cls = "ch upcoming";
+    if (got !== undefined) {
+      if (got === expected) cls = "ch correct";
+      else cls = expected === " " ? "ch wrong wrongSpace" : "ch wrong";
+    }
+
+    // Keep spaces visible and width-correct
+    const content = expected === " " ? "&nbsp;" : escapeHtml(expected);
+    spans.push(`<span class="${cls}" data-i="${i}">${content}</span>`);
   }
 
-  const good = target.slice(0, goodLen);
-  const bad = typed.length > goodLen ? target.slice(goodLen, Math.min(target.length, typed.length)) : "";
-  const rest = target.slice(Math.min(target.length, typed.length));
+  elSentence.innerHTML = spans.join("");
 
-  elSentence.innerHTML = `
-    <span class="good">${escapeHtml(good)}</span><span class="bad">${escapeHtml(bad)}</span><span class="rest">${escapeHtml(rest)}</span>
-  `;
+  // Update live stats
+  const elapsed = startedAt ? (Date.now() - startedAt) : 0;
+  elAcc.textContent = String(computeAccuracy(target, typed));
+  elWpm.textContent = String(computeWpm(typed.length, elapsed));
+
+  updateWeakLettersUI();
+  requestAnimationFrame(positionCaret);
 }
 
-function computeAccuracy(target, typed) {
-  // Character-level accuracy for the characters typed so far.
-  if (!typed.length) return 0;
-  const n = Math.min(target.length, typed.length);
-  let correct = 0;
-  for (let k = 0; k < n; k++) {
-    if (target[k] === typed[k]) correct++;
-  }
-  // penalize extra characters beyond target length as incorrect
-  const total = typed.length;
-  return Math.max(0, Math.round((correct / total) * 100));
+function positionCaret() {
+  // caret should sit at the next character to type
+  const caretIndex = Math.min(typed.length, Math.max(0, target.length - 1));
+  const span = elSentence.querySelector(`span[data-i="${caretIndex}"]`);
+
+  if (!span) return;
+
+  const boxRect = elTypebox.getBoundingClientRect();
+  const chRect = span.getBoundingClientRect();
+
+  const x = chRect.left - boxRect.left;
+  const y = chRect.top - boxRect.top;
+
+  elCaret.style.transform = `translate(${x}px, ${y}px)`;
+  elCaret.style.height = `${chRect.height}px`;
 }
 
-function computeWpm(typed, elapsedMs) {
-  // Standard: 5 chars = 1 word
-  if (!typed.length || elapsedMs <= 0) return 0;
-  const minutes = elapsedMs / 60000;
-  const words = typed.length / 5;
-  return Math.max(0, Math.round(words / minutes));
+function resetSentenceProgress() {
+  typed = "";
+  startedAt = null;
+  lastTypeAt = null;
+
+  elFeedback.textContent = "";
+  elWpm.textContent = "0";
+  elAcc.textContent = "0";
+
+  render();
 }
 
 function setSentence(idx) {
-  i = idx;
-  currentTarget = sentences[i] ?? "";
-  startedAt = null;
-
-  elInput.value = "";
-  elInput.focus();
-
-  elWpm.textContent = "0";
-  elAcc.textContent = "0";
-  elFeedback.textContent = "";
-
-  elIdx.textContent = String(i + 1);
+  sentenceIndex = idx;
+  target = sentences[sentenceIndex] ?? "";
+  elIdx.textContent = String(sentenceIndex + 1);
   elTotal.textContent = String(sentences.length);
 
-  // initial render (no diff)
-  elSentence.textContent = currentTarget;
-}
+  resetSentenceProgress();
 
-function finishSentence() {
-  const typed = elInput.value;
-  const elapsed = startedAt ? (Date.now() - startedAt) : 0;
-
-  const wpm = computeWpm(typed, elapsed);
-  const acc = computeAccuracy(currentTarget, typed);
-
-  elWpm.textContent = String(wpm);
-  elAcc.textContent = String(acc);
-
-  if (bestWpm === null || wpm > bestWpm) bestWpm = wpm;
-  elBest.textContent = bestWpm === null ? "–" : `${bestWpm} WPM`;
-
-  const perfect = typed === currentTarget;
-  elFeedback.textContent = perfect
-    ? "Well done. Proceed."
-    : "Press Next to continue (or correct errors and try again).";
+  // focus typing surface
+  elTypebox.focus({ preventScroll: true });
 }
 
 function nextSentence() {
   if (!sentences.length) return;
-  const next = (i + 1) % sentences.length;
+  const next = (sentenceIndex + 1) % sentences.length;
   setSentence(next);
 }
 
-elInput.addEventListener("input", () => {
-  if (!currentTarget) return;
+function recordCharTiming(expectedChar, dt) {
+  const c = expectedChar.toLowerCase();
+  if (!/^[a-z]$/.test(c)) return;
 
-  if (startedAt === null && elInput.value.length > 0) {
-    startedAt = Date.now();
+  // ignore huge pauses so distractions don't dominate weakness
+  if (dt > 2000) return;
+
+  const prev = charStats.get(c) ?? { count: 0, totalMs: 0 };
+  prev.count += 1;
+  prev.totalMs += dt;
+  charStats.set(c, prev);
+}
+
+function getSlowLetters(limit = 6) {
+  const rows = [];
+  for (const [c, s] of charStats.entries()) {
+    if (s.count < 6) continue;
+    rows.push({ c, avg: s.totalMs / s.count, count: s.count });
+  }
+  rows.sort((a, b) => b.avg - a.avg);
+  return rows.slice(0, limit);
+}
+
+function updateWeakLettersUI() {
+  const slow = getSlowLetters(6);
+  if (!slow.length) {
+    elWeakList.textContent = "–";
+    elFocus.textContent = "–";
+    return;
   }
 
-  const typed = elInput.value;
+  elFocus.textContent = slow[0].c;
+
+  elWeakList.textContent = slow
+    .map(x => `${x.c}: ${Math.round(x.avg)}ms (${x.count})`)
+    .join(" · ");
+}
+
+function finishIfComplete() {
+  if (typed !== target) return;
+
   const elapsed = startedAt ? (Date.now() - startedAt) : 0;
+  const wpm = computeWpm(typed.length, elapsed);
+  const acc = computeAccuracy(target, typed);
 
-  renderDiff(currentTarget, typed);
+  if (bestWpm === null || wpm > bestWpm) bestWpm = wpm;
+  elBest.textContent = bestWpm === null ? "–" : `${bestWpm} WPM`;
 
-  elAcc.textContent = String(computeAccuracy(currentTarget, typed));
-  elWpm.textContent = String(computeWpm(typed, elapsed));
+  elFeedback.textContent = acc === 100
+    ? "Complete. Press Enter for the next sentence."
+    : "Complete (with mistakes). Press Esc to retry or Enter to continue.";
+}
 
-  if (typed === currentTarget) {
-    finishSentence();
+elTypebox.addEventListener("keydown", (e) => {
+  if (!target) return;
+
+  if (isIgnorableKey(e)) return;
+
+  if (e.key === "Escape") {
+    e.preventDefault();
+    resetSentenceProgress();
+    return;
   }
-});
 
-elInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
     e.preventDefault();
-    finishSentence();
+    nextSentence();
+    return;
   }
+
+  if (e.key === "Backspace") {
+    e.preventDefault();
+    if (typed.length > 0) typed = typed.slice(0, -1);
+    render();
+    return;
+  }
+
+  // Only accept printable 1-char keys (includes space and punctuation)
+  if (e.key.length !== 1) return;
+
+  e.preventDefault();
+
+  // start timer on first character
+  const now = Date.now();
+  if (startedAt === null) startedAt = now;
+
+  // record per-char dt against the expected character position
+  if (lastTypeAt !== null) {
+    const expected = target[typed.length] ?? "";
+    recordCharTiming(expected, now - lastTypeAt);
+  }
+  lastTypeAt = now;
+
+  // append typed char (cap at target length; ignore extra)
+  if (typed.length < target.length) {
+    typed += e.key;
+  }
+
+  render();
+  finishIfComplete();
 });
 
-btnNext.addEventListener("click", nextSentence);
-btnReload.addEventListener("click", () => init());
+window.addEventListener("resize", () => positionCaret());
+
+// Make clicking the box focus it
+elTypebox.addEventListener("pointerdown", () => {
+  elTypebox.focus({ preventScroll: true });
+});
 
 async function init() {
   elSentence.textContent = "Loading Meditations…";
-  elInput.disabled = true;
+  elTypebox.focus({ preventScroll: true });
 
-  const res = await fetch(TEXT_URL);
+  let res;
+  try {
+    res = await fetch(TEXT_URL);
+  } catch {
+    elSentence.textContent = "Could not load text file. Are you running via a local server?";
+    return;
+  }
+
   if (!res.ok) {
     elSentence.textContent = "Could not load text file. Check texts/meditations.txt exists.";
-    elInput.disabled = true;
     return;
   }
 
@@ -170,13 +299,11 @@ async function init() {
 
   if (!sentences.length) {
     elSentence.textContent = "No sentences found in text file.";
-    elInput.disabled = true;
     return;
   }
 
   bestWpm = null;
   elBest.textContent = "–";
-  elInput.disabled = false;
 
   setSentence(0);
 }
