@@ -1,36 +1,171 @@
-/* Paste this into your style.css */
-body {
-    background-color: #121212; /* Deep dark mode */
-    color: #e0e0e0;
-    font-family: 'Georgia', serif; /* Classic but clean */
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    height: 100vh;
-    margin: 0;
+/* Paste this into your style.css (compatible with current inline typing UI) */
+
+:root{
+  --bg: #121212;             /* Deep dark mode */
+  --panel: rgba(255,255,255,0.02);
+  --text: #e0e0e0;
+  --muted: #9aa0a6;
+  --accent: #00ff9d;         /* Techy green accent */
+  --danger: #ca4754;
+  --ok: #ffffff;
+  --border: rgba(224,224,224,0.12);
+  --shadow: rgba(0,0,0,0.45);
 }
 
-#target-text {
-    font-size: 2rem;
-    line-height: 1.5;
-    max-width: 800px;
-    color: #444; /* Grey out the text you haven't typed yet */
-    position: relative;
-    user-select: none;
+*{ box-sizing: border-box; }
+
+html, body{ height: 100%; }
+
+body{
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: Georgia, ui-serif, "Times New Roman", Times, serif;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  margin: 0;
 }
 
-.correct { color: #ffffff; } /* Typed correctly */
-.incorrect { color: #ca4754; border-bottom: 2px solid; } /* Errors */
-
-#input-field {
-    opacity: 0; /* Hide the clunky box, but keep it functional */
-    position: absolute;
+.app{
+  width: min(980px, calc(100vw - 36px));
+  margin: 0 auto;
 }
 
-#stats {
-    font-family: monospace;
-    color: #00ff9d; /* Techy green accent */
-    margin-top: 2rem;
-    font-size: 0.9rem;
+.header{
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+h1{
+  margin: 0;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.subtle{ color: var(--muted); }
+
+.header__right{
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.hint{
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: rgba(255,255,255,0.02);
+  font-size: 13px;
+}
+
+.panel{
+  width: 100%;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px;
+  box-shadow: 0 18px 60px var(--shadow);
+}
+
+.meta{
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.pill{
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: rgba(255,255,255,0.02);
+  font-size: 14px;
+}
+
+.typewrap{ position: relative; }
+
+.typebox{
+  position: relative;
+  border: 1px solid rgba(224,224,224,0.18);
+  border-radius: 12px;
+  padding: 16px 14px;
+  min-height: 96px;
+  outline: none;
+  background: rgba(0,0,0,0.20);
+}
+
+.typebox:focus{
+  border-color: rgba(0,255,157,0.55);
+  box-shadow: 0 0 0 4px rgba(0,255,157,0.12);
+}
+
+/* This maps to #sentence in your current HTML (replaces your old #target-text idea). */
+.sentence{
+  font-size: 2rem;
+  line-height: 1.5;
+  max-width: 800px;
+  user-select: none;
+}
+
+/* Compatible with script.js span classes */
+.ch{ white-space: pre-wrap; }
+.ch.upcoming{ color: rgba(224,224,224,0.35); } /* Grey out what you haven't typed yet */
+.ch.correct{ color: var(--ok); }               /* Typed correctly */
+.ch.wrong{ color: var(--danger); border-bottom: 2px solid var(--danger); } /* Errors */
+.ch.wrongSpace{ background: rgba(202,71,84,0.22); border-radius: 4px; }
+
+.caret{
+  position: absolute;
+  width: 2px;
+  height: 1.2em;
+  background: rgba(0,255,157,0.9);
+  border-radius: 2px;
+  transform: translate(0,0);
+  transition: transform 80ms linear;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.typebox:focus .caret{ opacity: 1; }
+
+.below{
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.feedback{
+  margin-top: 10px;
+  font-size: 0.9rem;
+  min-height: 22px;
+}
+
+.weak{
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.weak__title{
+  font-size: 13px;
+  margin-bottom:  6px;
+}
+
+.weak__list{
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.footer{
+  margin-top: 12px;
+  font-size: 13px;
 }
