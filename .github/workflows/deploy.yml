@@ -4,7 +4,7 @@ on:
   push:
     branches: ["main"]
 
-# This block gives the action the specific permissions it needs to deploy
+# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
   contents: write
   pages: write
@@ -19,7 +19,8 @@ jobs:
 
       - name: Inject API Key
         run: |
-          # Finds the placeholder and swaps it for your secret
+          # Finds the placeholder in script.js and replaces it with the secret
+          # We use double quotes in the sed command to handle the secret correctly
           sed -i "s/GEMINI_API_KEY_PLACEHOLDER/${{ secrets.GEMINI_API_KEY }}/g" script.js
 
       - name: Deploy to GitHub Pages
