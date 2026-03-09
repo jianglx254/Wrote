@@ -186,7 +186,7 @@ async function processNotes() {
   } finally {
     hideLoading();
     if (elGenerateBtn) elGenerateBtn.disabled = false;
-    if (elTopicBtn) elTopicBtn.disabled = false;
+    if (elTopicBtn) elTopicBtn.disabled = elTopicInput ? !elTopicInput.value.trim() : true;
   }
 }
 
@@ -238,7 +238,7 @@ async function generateTopic() {
   } finally {
     hideLoading();
     if (elGenerateBtn) elGenerateBtn.disabled = false;
-    if (elTopicBtn) elTopicBtn.disabled = false;
+    if (elTopicBtn) elTopicBtn.disabled = elTopicInput ? !elTopicInput.value.trim() : true;
   }
 }
 
@@ -257,6 +257,11 @@ if (elTopicInput) {
       e.preventDefault();
       generateTopic();
     }
+  });
+
+  // Enable/disable the Generate Topic button based on whether input has content
+  elTopicInput.addEventListener("input", () => {
+    if (elTopicBtn) elTopicBtn.disabled = !elTopicInput.value.trim();
   });
 }
 
@@ -284,6 +289,10 @@ let _prevTypedLen = 0;  // tracks input length between keystrokes to detect new 
 // RAF render-throttling state
 let _rafId = 0;
 let _pendingTyped = "";
+
+// Tracks whether finishSentence() has already been called for the current sentence
+// attempt, so that pressing Enter after exact completion doesn't double-record WPM.
+let _sentenceFinished = false;
 
 // Pre-allocated DOM nodes for the active sentence (rebuilt once per sentence)
 let _charNodes = [];     // one <span> per target character
@@ -713,6 +722,7 @@ function resetSentenceProgress() {
   elInput.value = "";
   startedAt = null;
   _prevTypedLen = 0;
+  _sentenceFinished = false;
 
   // WPM is intentionally not reset to "0" here so that the last completed
   // sentence's WPM stays visible while the user reads the next sentence.
@@ -746,6 +756,7 @@ function nextSentence() {
 }
 
 function finishSentence() {
+  _sentenceFinished = true;
   const typed = elInput.value;
   const elapsed = startedAt ? (Date.now() - startedAt) : 0;
 
@@ -830,6 +841,11 @@ elInput.addEventListener("input", () => {
 elInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
     e.preventDefault();
+    // If the user presses Enter mid-attempt (not yet finished), record the WPM
+    // so the average is accurate, then advance to the next sentence.
+    if (!_sentenceFinished && startedAt !== null) {
+      finishSentence();
+    }
     nextSentence();
   } else if (e.key === "Escape") {
     e.preventDefault();
@@ -918,7 +934,8 @@ async function init() {
 
   // Enable AI buttons immediately (Gemini is cloud-based, no local init needed)
   if (elGenerateBtn) elGenerateBtn.disabled = false;
-  if (elTopicBtn) elTopicBtn.disabled = false;
+  // Topic button: keep disabled until the user types something in the topic input
+  if (elTopicBtn) elTopicBtn.disabled = elTopicInput ? !elTopicInput.value.trim() : true;
   if (elAiStatus) {
     elAiStatus.textContent = (API_KEY === "" || API_KEY === "GEMINI_API_KEY_PLACEHOLDER") ? "No API Key" : "Gemini Ready";
     elAiStatus.classList.add((API_KEY === "" || API_KEY === "GEMINI_API_KEY_PLACEHOLDER") ? "status--error" : "status--ready");
